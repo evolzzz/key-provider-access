@@ -24,7 +24,7 @@ Profiles include both OAuth credentials and API-key-backed providers. Policies s
 - The after-auth interceptor verifies the selected auth ID before an upstream executor receives the request.
 - Missing identity, missing selected-auth metadata, or invalid policy state fails closed whenever policies exist.
 
-The scheduler receives CPA's currently eligible, highest-priority candidate tier. An allow list cannot promote a lower CPA priority tier that the host did not offer. CPA Home mode currently bypasses plugin schedulers; the after-auth check still prevents a disallowed profile from being used, but it cannot reroute that request.
+The scheduler opts into CPA's cross-priority candidate mode. It applies the per-key allow/deny policy first, then keeps only the highest priority tier that remains allowed and round-robins inside that tier. This preserves CPA priority semantics while allowing a key to use a lower-priority profile when all higher-priority profiles are denied for that key. CPA Home mode currently bypasses plugin schedulers; the after-auth check still prevents a disallowed profile from being used, but it cannot reroute that request.
 
 Only one scheduler plugin is active in CPA (the highest-priority enabled scheduler). Configure plugin priorities deliberately if another scheduler plugin is enabled.
 

@@ -121,6 +121,81 @@ func TestSchedulerSelectsOnlyAllowedProfiles(t *testing.T) {
 	}
 }
 
+func TestSchedulerPrefersHighestPriorityTierOfEligibleProfiles(t *testing.T) {
+	installTestPolicy(t, policyDocument{Version: 2, Policies: []policyConfig{{
+		CallerScope:   scopeA,
+		AllowProfiles: []string{"*"},
+	}}})
+	request := schedulerPickRequest{
+		Provider: "mixed",
+		Model:    "shared-model",
+		Options:  schedulerOptions{Metadata: map[string]any{"caller_scope": scopeA}},
+		Candidates: []schedulerAuthCandidate{
+			{ID: "low-tier-a", Provider: "codex", Priority: 50},
+			{ID: "top-tier-a", Provider: "codex", Priority: 100},
+			{ID: "top-tier-b", Provider: "codex", Priority: 100},
+		},
+	}
+	want := []string{"top-tier-a", "top-tier-b", "top-tier-a", "top-tier-b"}
+	for index, expected := range want {
+		rawRequest, _ := json.Marshal(request)
+		rawResponse, err := pickProfile(rawRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response schedulerPickResponse
+		unwrapEnvelope(t, rawResponse, &response)
+		if !response.Handled || response.AuthID != expected {
+			t.Fatalf("pick %d = %#v, want auth %q", index, response, expected)
+		}
+	}
+}
+
+func TestSchedulerReachesLowerPriorityWhenHigherPriorityProfileIsDenied(t *testing.T) {
+	installTestPolicy(t, policyDocument{Version: 2, Policies: []policyConfig{{
+		CallerScope:   scopeA,
+		AllowProfiles: []string{"auth-b"},
+		DenyProfiles:  []string{"auth-a"},
+	}}})
+	request := schedulerPickRequest{
+		Provider: "codex",
+		Model:    "shared-model",
+		Options:  schedulerOptions{Metadata: map[string]any{"caller_scope": scopeA}},
+		Candidates: []schedulerAuthCandidate{
+			{ID: "auth-a", Provider: "codex", Priority: 100},
+			{ID: "auth-b", Provider: "codex", Priority: 50},
+		},
+	}
+	rawRequest, _ := json.Marshal(request)
+	rawResponse, err := pickProfile(rawRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response schedulerPickResponse
+	unwrapEnvelope(t, rawResponse, &response)
+	if !response.Handled || response.AuthID != "auth-b" {
+		t.Fatalf("scheduler response = %#v, want lower-priority allowed auth-b", response)
+	}
+}
+
+func TestHighestPriorityTierKeepsOrderAndHandlesEmptyInput(t *testing.T) {
+	if tier := highestPriorityTier(nil); len(tier) != 0 {
+		t.Fatalf("highestPriorityTier(nil) = %#v", tier)
+	}
+	candidates := []schedulerAuthCandidate{
+		{ID: "a", Priority: 50},
+		{ID: "b", Priority: 100},
+		{ID: "c", Priority: 100},
+	}
+	tier := highestPriorityTier(candidates)
+	if len(tier) != 2 || tier[0].ID != "b" || tier[1].ID != "c" {
+		t.Fatalf("highestPriorityTier() = %#v", tier)
+	}
+	if len(candidates) != 3 || candidates[0].ID != "a" {
+		t.Fatalf("highestPriorityTier mutated input: %#v", candidates)
+	}
+}
+
 func TestSchedulerAdoptsLegacyAPIKeyIDs(t *testing.T) {
 	for _, test := range []struct {
 		kind     string
@@ -735,6 +810,9 @@ func TestRegistrationHasNoFrontendAuthCapabilityOrMethod(t *testing.T) {
 	}
 	if !pluginRegistration().Capabilities.Scheduler {
 		t.Fatal("registration does not advertise scheduler capability")
+	}
+	if !pluginRegistration().Capabilities.SchedulerAcrossPriorities {
+		t.Fatal("registration does not advertise scheduler_across_priorities capability")
 	}
 	response, err := handleMethod("frontend_auth.authenticate", []byte(`{}`))
 	if err != nil {

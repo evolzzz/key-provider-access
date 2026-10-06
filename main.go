@@ -135,9 +135,10 @@ func pluginRegistration() registration {
 			},
 		},
 		Capabilities: capabilities{
-			RequestInterceptor: hostSchema >= schemaVersion,
-			Scheduler:          true,
-			ManagementAPI:      true,
+			RequestInterceptor:        hostSchema >= schemaVersion,
+			Scheduler:                 true,
+			SchedulerAcrossPriorities: true,
+			ManagementAPI:             true,
 		},
 	}
 }

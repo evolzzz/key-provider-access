@@ -67,7 +67,11 @@ type configField struct {
 type capabilities struct {
 	RequestInterceptor bool `json:"request_interceptor"`
 	Scheduler          bool `json:"scheduler"`
-	ManagementAPI      bool `json:"management_api"`
+	// SchedulerAcrossPriorities asks CPA to pass candidates from every priority
+	// tier. The plugin can then apply per-key allow/deny policy first and preserve
+	// CPA priority semantics inside the allowed set.
+	SchedulerAcrossPriorities bool `json:"scheduler_across_priorities,omitempty"`
+	ManagementAPI             bool `json:"management_api"`
 }
 
 type requestInterceptRequest struct {

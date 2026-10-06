@@ -487,8 +487,16 @@ func legacyAPIKeyProfileID(candidate schedulerAuthCandidate) string {
 	return kind + ":" + digest[:12]
 }
 
+// nextProfile picks from the highest priority tier after policy filtering.
+//
+// The plugin opts into scheduler_across_priorities, so CPA provides candidates
+// from every available priority tier. Applying the policy first is important:
+// a key may deny every high-priority credential while still allowing a lower
+// priority credential. After filtering, we reproduce CPA's normal priority
+// semantics and round-robin only within the highest remaining tier.
 func (s *state) nextProfile(scope, provider, model string, candidates []schedulerAuthCandidate) string {
-	if len(candidates) == 0 {
+	tier := highestPriorityTier(candidates)
+	if len(tier) == 0 {
 		return ""
 	}
 	key := scope + "\x00" + strings.ToLower(strings.TrimSpace(provider)) + "\x00" + strings.TrimSpace(model)
@@ -499,7 +507,26 @@ func (s *state) nextProfile(scope, provider, model string, candidates []schedule
 	}
 	cursor := s.pickCursor[key]
 	s.pickCursor[key] = cursor + 1
-	return candidates[cursor%uint64(len(candidates))].ID
+	return tier[cursor%uint64(len(tier))].ID
+}
+
+func highestPriorityTier(candidates []schedulerAuthCandidate) []schedulerAuthCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	best := candidates[0].Priority
+	for _, candidate := range candidates[1:] {
+		if candidate.Priority > best {
+			best = candidate.Priority
+		}
+	}
+	tier := make([]schedulerAuthCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Priority == best {
+			tier = append(tier, candidate)
+		}
+	}
+	return tier
 }
 
 // wildcardMatch supports shell-style '*' and '?' while allowing '*' to cross '/'.
